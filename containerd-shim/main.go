@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -117,14 +117,11 @@ func main() {
 
 // startRunc starts runc detached and returns the container's pid
 func startRunc(s *stdio, id string) (int, error) {
-	cmd := exec.Command("runc", "--id", id, "start", "-d", "--console", s.console)
-	buf := bytes.NewBuffer(nil)
-	cmd.Stdout = buf
-	cmd.ExtraFiles = []*os.File{
-		s.stdin,
-		s.stdout,
-		s.stderr,
-	}
+	pidFile := filepath.Join(os.Args[1], "pid")
+	cmd := exec.Command("runc", "--id", id, "start", "-d", "--console", s.console, "--pid-file", pidFile)
+	cmd.Stdin = s.stdin
+	cmd.Stdout = s.stdout
+	cmd.Stderr = s.stderr
 	// set the parent death signal to SIGKILL so that if the shim dies the container
 	// process also dies
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -133,7 +130,11 @@ func startRunc(s *stdio, id string) (int, error) {
 	if err := cmd.Run(); err != nil {
 		return -1, err
 	}
-	return strconv.Atoi(buf.String())
+	data, err := ioutil.ReadFile(pidFile)
+	if err != nil {
+		return -1, err
+	}
+	return strconv.Atoi(string(data))
 }
 
 func deleteContainer(id string) error {
